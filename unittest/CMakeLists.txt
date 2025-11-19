@@ -350,3 +350,17 @@ endif()
 if(BUILD_WITH_CASADI_SUPPORT)
   add_subdirectory(casadi)
 endif()
+
+set(BUILD_WITH_REALTIME_SANITIZER ON)
+if(BUILD_WITH_REALTIME_SANITIZER)
+  include(FetchContent)
+  FetchContent_Declare(
+    rtsan
+    GIT_REPOSITORY https://github.com/ahoarau/rtsan_standalone.git
+    GIT_TAG        main
+  )
+  FetchContent_MakeAvailable(rtsan)
+
+  add_executable(realtime_sanitizer_demo realtime_sanitizer_demo.cpp)
+  target_link_libraries(realtime_sanitizer_demo PRIVATE rtsan::rtsan_standalone)
+endif()
