@@ -7,6 +7,9 @@ coverage*
 .travis
 .vscode*
 *.orig
+.cache/
+.DS_Store
+compile_commands.json
 
 # pixi environments
 .pixi
