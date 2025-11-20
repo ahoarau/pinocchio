@@ -2,7 +2,7 @@ name: CI - MacOS/Linux/Windows via Pixi
 
 on:
   schedule:
-    - cron: '0 0 * * 1'
+    - cron: "0 0 * * 1"
   push:
     branches:
       - devel
@@ -10,7 +10,7 @@ on:
       - doc/**
       - .gitlab-ci.yml
       - .gitignore
-      - '**.md'
+      - "**.md"
       - CITATION.*
       - COPYING.LESSER
       - colcon.pkg
@@ -20,7 +20,7 @@ on:
       - doc/**
       - .gitlab-ci.yml
       - .gitignore
-      - '**.md'
+      - "**.md"
       - CITATION.*
       - COPYING.LESSER
       - colcon.pkg
@@ -68,7 +68,6 @@ jobs:
             environment: all-clang-cl
             build_type: Release
             BUILD_ADVANCED_TESTING: OFF
-
 
     steps:
       # extract branch name or checkout devel branch for scheduled events
@@ -264,12 +263,51 @@ jobs:
         run: |
           pixi run -e test-pixi-build test
 
+  pinocchio-rtsan-build:
+    name: RTSan build - ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            name: Ubuntu (x86_64)
+
+          - os: macos-latest
+            name: MacOS (ARM64)
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: recursive
+
+      - uses: prefix-dev/setup-pixi@v0.9.3
+        with:
+          cache: true
+
+      - name: Build with RTSan
+        run: |
+          pixi run -e sanitizers build
+
+      - name: Test with RTSan
+        run: |
+          set +e
+          pixi run -e sanitizers test
+          EXIT_CODE=$?
+          if [ $EXIT_CODE -ne 0 ]; then
+            echo "::warning::Realtime Sanitizers tests failed"
+          fi
+
   check:
     if: always()
     name: check-macos-linux-windows-pixi
 
     needs:
       - pinocchio-pixi
+      - pinocchio-python-standalone-pixi
+      - pinocchio-pixi-build
+      - pinocchio-rtsan-build
 
     runs-on: Ubuntu-latest
 
