@@ -350,3 +350,13 @@ endif()
 if(BUILD_WITH_CASADI_SUPPORT)
   add_subdirectory(casadi)
 endif()
+
+if(BUILD_WITH_RTSAN)
+  add_pinocchio_unit_test(dynamic-allocations)
+  get_cpp_test_name(dynamic-allocations ${CMAKE_CURRENT_SOURCE_DIR} test_name)
+  target_compile_options(${test_name} PRIVATE -Wfunction-effects) # compile-time checks
+  target_compile_options(${test_name} PRIVATE -Wperf-constraint-implies-noexcept) # compile-time
+                                                                                  # checks
+  target_compile_options(${test_name} PRIVATE -fsanitize=realtime) # runtime checks
+  target_link_options(${test_name} PRIVATE -fsanitize=realtime) # runtime checks
+endif()

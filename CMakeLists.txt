@@ -144,6 +144,8 @@ option(CHECK_RUNTIME_MALLOC "Check if some memory allocations are performed at r
 
 option(ENABLE_TEMPLATE_INSTANTIATION "Template instantiation of the main library" ON)
 
+option(BUILD_WITH_RTSAN "Build with the Realtime Sanitizer (clang >=20, linux/mac only)" OFF)
+
 set(PINOCCHIO_MODEL_DIR "${PROJECT_SOURCE_DIR}/models")
 
 if(BUILD_BENCHMARK
