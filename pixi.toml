@@ -349,3 +349,61 @@ new-version = { features = [
   "python-latest",
 ], solve-group = "python-latest" }
 test-pixi-build = { features = ["test-pixi-build"], no-default-feature = true }
+
+# Sanitizers with clang
+[feature.clang-sanitizers]
+platforms = ["linux-64", "osx-64", "osx-arm64"]
+
+[feature.clang-sanitizers.dependencies]
+ccache = ">=4.9.1"
+cmake = ">=3.22"
+clangxx = ">=20"
+llvm-tools = ">=20"         # llvm-symbolizer to decode line numbers in sanitizer output (need to be in the shell to work)
+ninja = ">=1.11"
+pkg-config = ">=0.29.2"
+libboost-devel = ">=1.80.0"
+eigen = ">=3.4.0"
+urdfdom = ">=4.0"
+
+[feature.clang-sanitizers.activation.env]
+CC = "clang"
+CXX = "clang++"
+CMAKE_CXX_COMPILER_LAUNCHER = "ccache"
+CMAKE_EXPORT_COMPILE_COMMANDS = "ON"
+CMAKE_COLOR_DIAGNOSTICS = "ON"
+CCACHE_SLOPPINESS = "include_file_ctime,include_file_mtime,pch_defines,time_macros"
+
+[feature.clang-sanitizers.tasks]
+configure = { cmd = [
+  "cmake",
+  "-G",
+  "Ninja",
+  "-B",
+  "build",
+  "-S",
+  ".",
+  "-DCMAKE_BUILD_TYPE=Debug",
+  "-DCMAKE_INSTALL_PREFIX=$CONDA_PREFIX",
+  "-DBUILD_TESTING=ON",
+  "-DBUILD_BENCHMARK=OFF",
+  "-DBUILD_WITH_RTSAN=ON",
+  "-DBUILD_WITH_COLLISION_SUPPORT=ON",
+  "-DGENERATE_PYTHON_STUBS=OFF",
+  "-DBUILD_WITH_ACCELERATE_SUPPORT=OFF",
+  "-DBUILD_WITH_CASADI_SUPPORT=OFF",
+  "-DBUILD_WITH_AUTODIFF_SUPPORT=OFF",
+  "-DBUILD_WITH_EXTRA_SUPPORT=OFF",
+  "-DBUILD_WITH_OPENMP_SUPPORT=OFF",
+  "-DBUILD_WITH_CODEGEN_SUPPORT=OFF",
+  "-DBUILD_WITH_SDF_SUPPORT=OFF",
+  "-DBUILD_PYTHON_BINDINGS_WITH_BOOST_MPFR_SUPPORT=OFF",
+  "-DBUILD_TESTING_SCIPY=OFF",
+] }
+build = { cmd = "cmake --build build --target pinocchio-test-cpp-dynamic-allocations" , depends-on = ["configure"] }
+test = { cmd = "ctest --test-dir build --output-on-failure -R pinocchio-test-cpp-dynamic-allocations", depends-on = [
+  "build",
+] }
+
+[environments.sanitizers]
+features = ["clang-sanitizers", "collision", "benchmark"]
+no-default-feature = true
