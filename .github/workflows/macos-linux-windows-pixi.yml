@@ -264,7 +264,7 @@ jobs:
           pixi run -e test-pixi-build test
 
   pinocchio-rtsan-build:
-    name: RTSan build - ${{ matrix.os }}
+    name: RTSan build - ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
 
     strategy:
