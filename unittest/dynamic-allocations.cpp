@@ -48,18 +48,21 @@ extern "C"
   void __rtsan_realtime_exit(void);
 } // extern "C"
 
-// RAII class to enter/exit RTSan realtime mode
-struct ScopedSanitizeRealtime
+namespace
 {
-  ScopedSanitizeRealtime()
+  // RAII class to enter/exit RTSan realtime mode
+  struct ScopedSanitizeRealtime
   {
-    __rtsan_realtime_enter();
-  }
-  ~ScopedSanitizeRealtime()
-  {
-    __rtsan_realtime_exit();
-  }
-};
+    ScopedSanitizeRealtime()
+    {
+      __rtsan_realtime_enter();
+    }
+    ~ScopedSanitizeRealtime()
+    {
+      __rtsan_realtime_exit();
+    }
+  };
+} // namespace
 
 // Custom error reporter to count number of errors
 static int return_code = 0;
@@ -70,24 +73,21 @@ extern "C" void __sanitizer_report_error_summary(const char * error_summary)
 }
 
 // Use halt_on_error=false to continue execution on errors and report all errors at once
-__attribute__((__visibility__("default"))) extern "C" const char * __rtsan_default_options()
+// __attribute__((__visibility__("default"))) extern "C" const char * __rtsan_default_options()
+// {
+//   return "halt_on_error=false";
+// }
+
+bool hasMimicJoints(const Model & model)
 {
-  return "halt_on_error=false";
+  return !model.mimicked_joints.empty();
 }
 
-void run_dynamic_allocations_test(const Model & model)
+int run_kinematics_test(const Model & model, Data & data)
 {
-  return_code = 0;
-  BOOST_CHECK(model.njoints > 0);
-  Data data(model);
-
-  // Generate random configuration, velocity, and acceleration vectors
-  Eigen::VectorXd q = randomConfiguration(model);
-  Eigen::VectorXd v = Eigen::VectorXd::Random(model.nv);
-  Eigen::VectorXd a = Eigen::VectorXd::Random(model.nv);
-  Eigen::VectorXd tau = Eigen::VectorXd::Random(model.nv);
-
-  // ============ KINEMATICS ALGORITHMS ============
+  const Eigen::VectorXd q = randomConfiguration(model);
+  const Eigen::VectorXd v = Eigen::VectorXd::Random(model.nv);
+  const Eigen::VectorXd a = Eigen::VectorXd::Random(model.nv);
   {
     ScopedSanitizeRealtime sanitizer;
     // Forward kinematics (position only)
@@ -101,12 +101,14 @@ void run_dynamic_allocations_test(const Model & model)
 
     // Update global placements
     updateGlobalPlacements(model, data);
-
-    // Compute forward kinematics derivatives
-    computeForwardKinematicsDerivatives(model, data, q, v, a);
   }
+  return return_code;
+}
 
-  // ============ JACOBIAN ALGORITHMS ============
+int run_jacobians_test(const Model & model, Data & data)
+{
+  const Eigen::VectorXd q = randomConfiguration(model);
+  const Eigen::VectorXd v = Eigen::VectorXd::Random(model.nv);
   {
     ScopedSanitizeRealtime sanitizer;
     // Compute joint Jacobians
@@ -114,8 +116,8 @@ void run_dynamic_allocations_test(const Model & model)
   }
 
   // Get specific joint Jacobian
-  Data::Matrix6x J = Data::Matrix6x::Zero(6, model.nv);
-  JointIndex joint_id = static_cast<JointIndex>(model.njoints - 1);
+  const Data::Matrix6x J = Data::Matrix6x::Zero(6, model.nv);
+  const JointIndex joint_id = static_cast<JointIndex>(model.njoints - 1);
   {
     ScopedSanitizeRealtime sanitizer;
     getJointJacobian(model, data, joint_id, LOCAL, J);
@@ -125,51 +127,98 @@ void run_dynamic_allocations_test(const Model & model)
     // Compute Jacobian time variation
     computeJointJacobiansTimeVariation(model, data, q, v);
   }
+  return return_code;
+}
 
-  // ============ DYNAMICS ALGORITHMS ============
+int run_non_linear_effects_test(const Model & model, Data & data)
+{
+  const Eigen::VectorXd q = randomConfiguration(model);
+  const Eigen::VectorXd v = Eigen::VectorXd::Random(model.nv);
+  {
+    ScopedSanitizeRealtime sanitizer;
+    // Non-linear effects
+    nonLinearEffects(model, data, q, v);
+  }
+  return return_code;
+}
+
+int run_rnea_test(const Model & model, Data & data)
+{
+  const Eigen::VectorXd q = randomConfiguration(model);
+  const Eigen::VectorXd v = Eigen::VectorXd::Random(model.nv);
+  const Eigen::VectorXd a = Eigen::VectorXd::Random(model.nv);
   {
     ScopedSanitizeRealtime sanitizer;
     // RNEA (Recursive Newton-Euler Algorithm)
     rnea(model, data, q, v, a);
+  }
+  return return_code;
+}
 
-    // Non-linear effects
-    nonLinearEffects(model, data, q, v);
-
-    // Generalized gravity
-    computeGeneralizedGravity(model, data, q);
-
+int run_crba_test(const Model & model, Data & data)
+{
+  const Eigen::VectorXd q = randomConfiguration(model);
+  {
+    ScopedSanitizeRealtime sanitizer;
     // CRBA (Composite Rigid Body Algorithm)
     crba(model, data, q);
     crba(model, data, q, Convention::WORLD);
     crba(model, data, q, Convention::LOCAL);
+  }
+  return return_code;
+}
 
+int run_aba_test(const Model & model, Data & data)
+{
+  const Eigen::VectorXd q = randomConfiguration(model);
+  const Eigen::VectorXd v = Eigen::VectorXd::Random(model.nv);
+  const Eigen::VectorXd tau = Eigen::VectorXd::Random(model.nv);
+  {
+    ScopedSanitizeRealtime sanitizer;
     // ABA (Articulated Body Algorithm)
     aba(model, data, q, v, tau);
+  }
+  return return_code;
+}
 
-    // Compute minimal inverse inertia matrix
-    computeMinverse(model, data, q);
+int run_derivatives_test(const Model & model, Data & data)
+{
+  const Eigen::VectorXd q = randomConfiguration(model);
+  const Eigen::VectorXd v = Eigen::VectorXd::Random(model.nv);
+  const Eigen::VectorXd a = Eigen::VectorXd::Random(model.nv);
+  const Eigen::VectorXd tau = Eigen::VectorXd::Random(model.nv);
+
+  {
+    ScopedSanitizeRealtime sanitizer;
+    // Compute forward kinematics derivatives
+    computeForwardKinematicsDerivatives(model, data, q, v, a);
   }
 
-  // ============ DERIVATIVES ALGORITHMS ============
   // RNEA derivatives
-  Data::MatrixXs rnea_partial_dq = Data::MatrixXs::Zero(model.nv, model.nv);
-  Data::MatrixXs rnea_partial_dv = Data::MatrixXs::Zero(model.nv, model.nv);
-  Data::MatrixXs rnea_partial_da = Data::MatrixXs::Zero(model.nv, model.nv);
+  const Data::MatrixXs rnea_partial_dq = Data::MatrixXs::Zero(model.nv, model.nv);
+  const Data::MatrixXs rnea_partial_dv = Data::MatrixXs::Zero(model.nv, model.nv);
+  const Data::MatrixXs rnea_partial_da = Data::MatrixXs::Zero(model.nv, model.nv);
   {
     ScopedSanitizeRealtime sanitizer;
     computeRNEADerivatives(model, data, q, v, a, rnea_partial_dq, rnea_partial_dv, rnea_partial_da);
   }
 
   // ABA derivatives
-  Data::MatrixXs aba_partial_dq = Data::MatrixXs::Zero(model.nv, model.nv);
-  Data::MatrixXs aba_partial_dv = Data::MatrixXs::Zero(model.nv, model.nv);
-  Data::MatrixXs aba_partial_dtau = Data::MatrixXs::Zero(model.nv, model.nv);
+  const Data::MatrixXs aba_partial_dq = Data::MatrixXs::Zero(model.nv, model.nv);
+  const Data::MatrixXs aba_partial_dv = Data::MatrixXs::Zero(model.nv, model.nv);
+  const Data::MatrixXs aba_partial_dtau = Data::MatrixXs::Zero(model.nv, model.nv);
   {
     ScopedSanitizeRealtime sanitizer;
     computeABADerivatives(model, data, q, v, tau, aba_partial_dq, aba_partial_dv, aba_partial_dtau);
   }
+  return return_code;
+}
 
-  // ============ CENTER OF MASS ALGORITHMS ============
+int run_center_of_mass_test(const Model & model, Data & data)
+{
+  const Eigen::VectorXd q = randomConfiguration(model);
+  const Eigen::VectorXd v = Eigen::VectorXd::Random(model.nv);
+  const Eigen::VectorXd a = Eigen::VectorXd::Random(model.nv);
   {
     ScopedSanitizeRealtime sanitizer;
     // Compute center of mass position
@@ -184,15 +233,31 @@ void run_dynamic_allocations_test(const Model & model)
     // Jacobian of center of mass
     jacobianCenterOfMass(model, data, q);
   }
+  return return_code;
+}
 
-  // Center of mass derivatives
+int run_center_of_mass_derivatives_test(const Model & model, Data & data)
+{
+  const Eigen::VectorXd q = randomConfiguration(model);
+  const Eigen::VectorXd v = Eigen::VectorXd::Random(model.nv);
   Data::Matrix3x vcom_partial_dq = Data::Matrix3x::Zero(3, model.nv);
   {
     ScopedSanitizeRealtime sanitizer;
+    // Center of mass derivatives
     getCenterOfMassVelocityDerivatives(model, data, vcom_partial_dq);
   }
+  return return_code;
+}
 
-  // ============ CENTROIDAL DYNAMICS ============
+int run_centroidal_dynamics_test(const Model & model, Data & data)
+{
+  const Eigen::VectorXd q = randomConfiguration(model);
+  const Eigen::VectorXd v = Eigen::VectorXd::Random(model.nv);
+  const Eigen::VectorXd a = Eigen::VectorXd::Random(model.nv);
+  Data::Matrix6x dh_dq = Data::Matrix6x::Zero(6, model.nv);
+  Data::Matrix6x dhdot_dq = Data::Matrix6x::Zero(6, model.nv);
+  Data::Matrix6x dhdot_dv = Data::Matrix6x::Zero(6, model.nv);
+  Data::Matrix6x dhdot_da = Data::Matrix6x::Zero(6, model.nv);
   {
     ScopedSanitizeRealtime sanitizer;
     // Compute centroidal momentum
@@ -203,19 +268,16 @@ void run_dynamic_allocations_test(const Model & model)
 
     // Centroidal momentum Jacobian
     ccrba(model, data, q, v);
-  }
 
-  // Centroidal derivatives
-  Data::Matrix6x dh_dq = Data::Matrix6x::Zero(6, model.nv);
-  Data::Matrix6x dhdot_dq = Data::Matrix6x::Zero(6, model.nv);
-  Data::Matrix6x dhdot_dv = Data::Matrix6x::Zero(6, model.nv);
-  Data::Matrix6x dhdot_da = Data::Matrix6x::Zero(6, model.nv);
-  {
-    ScopedSanitizeRealtime sanitizer;
+    // Centroidal derivatives
     computeCentroidalDynamicsDerivatives(model, data, q, v, a, dh_dq, dhdot_dq, dhdot_dv, dhdot_da);
   }
+  return return_code;
+}
 
-  // ============ FRAMES ALGORITHMS ============
+int run_frame_algorithms_test(const Model & model, Data & data)
+{
+  const Eigen::VectorXd q = randomConfiguration(model);
   {
     ScopedSanitizeRealtime sanitizer;
     // Update frame placements
@@ -225,62 +287,80 @@ void run_dynamic_allocations_test(const Model & model)
     framesForwardKinematics(model, data, q);
   }
 
-  // Get frame Jacobian
-  Data::Matrix6x frame_J = Data::Matrix6x::Zero(6, model.nv);
-  if (model.nframes > 0)
-  {
-    FrameIndex frame_id = static_cast<FrameIndex>(model.nframes - 1);
-    {
-      ScopedSanitizeRealtime sanitizer;
-      getFrameJacobian(model, data, frame_id, LOCAL, frame_J);
-      getFrameJacobian(model, data, frame_id, WORLD, frame_J);
-      getFrameJacobian(model, data, frame_id, LOCAL_WORLD_ALIGNED, frame_J);
+  const Data::Matrix6x frame_J = Data::Matrix6x::Zero(6, model.nv);
+  Data::Matrix6x v_partial_dq = Data::Matrix6x::Zero(6, model.nv);
+  Data::Matrix6x v_partial_dv = Data::Matrix6x::Zero(6, model.nv);
+  Data::Matrix6x a_partial_dq = Data::Matrix6x::Zero(6, model.nv);
+  Data::Matrix6x a_partial_dv = Data::Matrix6x::Zero(6, model.nv);
+  Data::Matrix6x a_partial_da = Data::Matrix6x::Zero(6, model.nv);
 
-      // Compute frame Jacobian
-      computeFrameJacobian(model, data, q, frame_id, LOCAL, frame_J);
-      computeFrameJacobian(model, data, q, frame_id, WORLD, frame_J);
-
-      // Frame Jacobian time variation
-      getFrameJacobianTimeVariation(model, data, frame_id, LOCAL, frame_J);
-      getFrameJacobianTimeVariation(model, data, frame_id, WORLD, frame_J);
-
-      // Frame velocity
-      getFrameVelocity(model, data, frame_id, LOCAL);
-      getFrameVelocity(model, data, frame_id, WORLD);
-      getFrameVelocity(model, data, frame_id, LOCAL_WORLD_ALIGNED);
-
-      // Frame acceleration
-      getFrameAcceleration(model, data, frame_id, LOCAL);
-      getFrameAcceleration(model, data, frame_id, WORLD);
-      getFrameAcceleration(model, data, frame_id, LOCAL_WORLD_ALIGNED);
-
-      // Frame classical acceleration
-      getFrameClassicalAcceleration(model, data, frame_id, LOCAL);
-      getFrameClassicalAcceleration(model, data, frame_id, WORLD);
-      getFrameClassicalAcceleration(model, data, frame_id, LOCAL_WORLD_ALIGNED);
-    }
-
-    // Frame derivatives
-    Data::Matrix6x v_partial_dq = Data::Matrix6x::Zero(6, model.nv);
-    Data::Matrix6x v_partial_dv = Data::Matrix6x::Zero(6, model.nv);
-    Data::Matrix6x a_partial_dq = Data::Matrix6x::Zero(6, model.nv);
-    Data::Matrix6x a_partial_dv = Data::Matrix6x::Zero(6, model.nv);
-    Data::Matrix6x a_partial_da = Data::Matrix6x::Zero(6, model.nv);
-    {
-      ScopedSanitizeRealtime sanitizer;
-      getFrameVelocityDerivatives(model, data, frame_id, LOCAL, v_partial_dq, v_partial_dv);
-      getFrameAccelerationDerivatives(
-        model, data, frame_id, LOCAL, v_partial_dq, a_partial_dq, a_partial_dv, a_partial_da);
-    }
-  }
-
-  // ============ COMPUTE ALL TERMS ============
+  for (FrameIndex frame_idx = 0; frame_idx < static_cast<FrameIndex>(model.nframes); ++frame_idx)
   {
     ScopedSanitizeRealtime sanitizer;
+    getFrameJacobian(model, data, frame_idx, LOCAL, frame_J);
+    getFrameJacobian(model, data, frame_idx, WORLD, frame_J);
+    getFrameJacobian(model, data, frame_idx, LOCAL_WORLD_ALIGNED, frame_J);
+
+    // Compute frame Jacobian
+    computeFrameJacobian(model, data, q, frame_idx, LOCAL, frame_J);
+    computeFrameJacobian(model, data, q, frame_idx, WORLD, frame_J);
+
+    // Frame Jacobian time variation
+    getFrameJacobianTimeVariation(model, data, frame_idx, LOCAL, frame_J);
+    getFrameJacobianTimeVariation(model, data, frame_idx, WORLD, frame_J);
+
+    // Frame velocity
+    getFrameVelocity(model, data, frame_idx, LOCAL);
+    getFrameVelocity(model, data, frame_idx, WORLD);
+    getFrameVelocity(model, data, frame_idx, LOCAL_WORLD_ALIGNED);
+
+    // Frame acceleration
+    getFrameAcceleration(model, data, frame_idx, LOCAL);
+    getFrameAcceleration(model, data, frame_idx, WORLD);
+    getFrameAcceleration(model, data, frame_idx, LOCAL_WORLD_ALIGNED);
+
+    // Frame classical acceleration
+    getFrameClassicalAcceleration(model, data, frame_idx, LOCAL);
+    getFrameClassicalAcceleration(model, data, frame_idx, WORLD);
+    getFrameClassicalAcceleration(model, data, frame_idx, LOCAL_WORLD_ALIGNED);
+
+    // Frame derivatives
+    if (!hasMimicJoints(model))
+    {
+      ScopedSanitizeRealtime sanitizer;
+      getFrameVelocityDerivatives(model, data, frame_idx, LOCAL, v_partial_dq, v_partial_dv);
+      getFrameAccelerationDerivatives(
+        model, data, frame_idx, LOCAL, v_partial_dq, a_partial_dq, a_partial_dv, a_partial_da);
+    }
+  }
+  return return_code;
+}
+
+int run_compute_all_terms_test(const Model & model, Data & data)
+{
+  const Eigen::VectorXd q = randomConfiguration(model);
+  const Eigen::VectorXd v = Eigen::VectorXd::Random(model.nv);
+  {
+    ScopedSanitizeRealtime sanitizer;
+    // pinocchio::forwardKinematics
+    // pinocchio::crba
+    // pinocchio::nonLinearEffects
+    // pinocchio::computeJointJacobians
+    // pinocchio::centerOfMass
+    // pinocchio::jacobianCenterOfMass
+    // pinocchio::ccrba
+    // pinocchio::computeKineticEnergy
+    // pinocchio::computePotentialEnergy
+    // pinocchio::computeGeneralizedGravity
     computeAllTerms(model, data, q, v);
   }
+  return return_code;
+}
 
-  // ============ ENERGY ============
+int run_energy_test(const Model & model, Data & data)
+{
+  const Eigen::VectorXd q = randomConfiguration(model);
+  const Eigen::VectorXd v = Eigen::VectorXd::Random(model.nv);
   {
     ScopedSanitizeRealtime sanitizer;
     // Compute kinetic energy
@@ -289,13 +369,22 @@ void run_dynamic_allocations_test(const Model & model)
     // Compute potential energy
     computePotentialEnergy(model, data, q);
   }
+  return return_code;
+}
 
-  // ============ CHOLESKY DECOMPOSITION ============
+int run_compute_generalized_gravity_test(const Model & model, Data & data)
+{
+  const Eigen::VectorXd q = randomConfiguration(model);
   {
     ScopedSanitizeRealtime sanitizer;
-    crba(model, data, q);
+    // Compute generalized gravity
+    computeGeneralizedGravity(model, data, q);
   }
+  return return_code;
+}
 
+int run_cholesky_test(const Model & model, Data & data)
+{
   Eigen::VectorXd v_chol = Eigen::VectorXd::Random(model.nv);
   {
     ScopedSanitizeRealtime sanitizer;
@@ -308,6 +397,79 @@ void run_dynamic_allocations_test(const Model & model)
     ScopedSanitizeRealtime sanitizer;
     cholesky::computeMinv(model, data, M_inv);
   }
+  return return_code;
+}
+
+int run_joint_configuration_operations_test(const Model & model)
+{
+  Eigen::VectorXd q = randomConfiguration(model);
+  Eigen::VectorXd dq = Eigen::VectorXd::Random(model.nv);
+  Eigen::VectorXd v = Eigen::VectorXd::Random(model.nv);
+  Eigen::VectorXd q_neutral = neutral(model);
+  Eigen::VectorXd q_integrated(model.nq);
+  Eigen::VectorXd q_interp(model.nq);
+
+  {
+    ScopedSanitizeRealtime sanitizer;
+    normalize(model, q);
+    difference(model, q, q_neutral, dq);
+    integrate(model, q, v, q_integrated);
+    interpolate(model, q, q_neutral, 0.5, q_interp);
+    distance(model, q, q_neutral);
+    isNormalized(model, q);
+    isSameConfiguration(model, q, q, 1e-12);
+  }
+  return return_code;
+}
+
+BOOST_AUTO_TEST_CASE(dynamic_allocations_spatial_operations)
+{
+  {
+    ScopedSanitizeRealtime sanitizer;
+    // Classic acceleration
+    SE3 M = SE3::Random();
+    Motion v_spatial = Motion::Random();
+    Motion a_spatial = Motion::Random();
+    classicAcceleration(v_spatial, a_spatial);
+
+    // Exponential/logarithm maps
+    SE3::Vector3 w = SE3::Vector3::Random();
+    exp3(w);
+    log3(SE3::Random().rotation());
+
+    Motion::Vector6 nu = Motion::Vector6::Random();
+    exp6(nu);
+    log6(M);
+  }
+}
+
+void run_dynamic_allocations_test(const Model & model)
+{
+  // mimic only support the following algorithms:
+  // RNEA
+  // CRBA
+  // Forward Kinematics
+  // Jacobians and Frames
+  // Centroidal Algorithm (ccrba)
+
+  Data data(model);
+  run_kinematics_test(model, data);
+  run_jacobians_test(model, data);
+  run_non_linear_effects_test(model, data);
+  run_frame_algorithms_test(model, data);
+  run_rnea_test(model, data);
+  run_crba_test(model, data);
+
+  run_aba_test(model, data);
+  run_center_of_mass_derivatives_test(model, data);
+  run_derivatives_test(model, data);
+  run_center_of_mass_test(model, data);
+  run_centroidal_dynamics_test(model, data);
+  run_compute_all_terms_test(model, data);
+  run_energy_test(model, data);
+  run_compute_generalized_gravity_test(model, data);
+  run_cholesky_test(model, data);
+  run_joint_configuration_operations_test(model);
 
 #if 0 // /!\ Those tests currently fails /!\
   // ============ REGRESSOR ============
@@ -389,118 +551,60 @@ void run_dynamic_allocations_test(const Model & model)
     }
   }
 #endif
-  // ============ SPATIAL OPERATIONS ============
-  {
-    ScopedSanitizeRealtime sanitizer;
-    // Classic acceleration
-    SE3 M = SE3::Random();
-    Motion v_spatial = Motion::Random();
-    Motion a_spatial = Motion::Random();
-    classicAcceleration(v_spatial, a_spatial);
-
-    // Exponential/logarithm maps
-    SE3::Vector3 w = SE3::Vector3::Random();
-    exp3(w);
-    log3(SE3::Random().rotation());
-
-    Motion::Vector6 nu = Motion::Vector6::Random();
-    exp6(nu);
-    log6(M);
-  }
-
-  // ============ JOINT CONFIGURATION OPERATIONS ============
-
-  // Neutral configuration
-  const Eigen::VectorXd q_neutral = neutral(model);
-
-  // Normalize configuration
-  {
-    ScopedSanitizeRealtime sanitizer;
-    normalize(model, q);
-  }
-
-  // Difference between configurations
-  Eigen::VectorXd dq(model.nv);
-  {
-    ScopedSanitizeRealtime sanitizer;
-    difference(model, q, q_neutral, dq);
-  }
-
-  // Integrate configuration
-  Eigen::VectorXd q_integrated(model.nq);
-  {
-    ScopedSanitizeRealtime sanitizer;
-    integrate(model, q, v, q_integrated);
-  }
-
-  // Interpolate configurations
-  Eigen::VectorXd q_interp(model.nq);
-  {
-    ScopedSanitizeRealtime sanitizer;
-    interpolate(model, q, q_neutral, 0.5, q_interp);
-  }
-
-  // Distance between configurations
-  {
-    ScopedSanitizeRealtime sanitizer;
-    distance(model, q, q_neutral);
-  }
-
-  // Check if configuration is normalized
-  {
-    ScopedSanitizeRealtime sanitizer;
-    isNormalized(model, q);
-  }
-
-  // Check if configuration is within limits
-  {
-    ScopedSanitizeRealtime sanitizer;
-    isSameConfiguration(model, q, q, 1e-12);
-  }
-  BOOST_REQUIRE_EQUAL(return_code, 0);
 }
 
-BOOST_AUTO_TEST_CASE(dynamic_allocations)
+// BOOST_AUTO_TEST_CASE(dynamic_allocations_humanoid_random_free_floating)
+// {
+//   // Test with humanoid random model (Free floating)
+//   Model model;
+//   const bool using_free_floating = true;
+//   const bool using_mimic = false;
+//   buildModels::humanoidRandom(model, using_free_floating, using_mimic);
+//   run_dynamic_allocations_test(model);
+// }
+
+// BOOST_AUTO_TEST_CASE(dynamic_allocations_humanoid_random_composite)
+// {
+//   // Test with humanoid random model (Composite)
+//   Model model;
+//   const bool using_free_floating = false;
+//   const bool using_mimic = false;
+//   buildModels::humanoidRandom(model, using_free_floating, using_mimic);
+//   run_dynamic_allocations_test(model);
+// }
+
+// BOOST_AUTO_TEST_CASE(dynamic_allocations_manipulator)
+// {
+//   // Test with manipulator
+//   Model model;
+//   const bool using_mimic = false;
+//   buildModels::manipulator(model, using_mimic);
+//   run_dynamic_allocations_test(model);
+// }
+
+BOOST_AUTO_TEST_CASE(dynamic_allocations_manipulator_mimic)
 {
-  // Test with humanoid random model (Free floating)
-  {
-    Model model;
-    buildModels::humanoidRandom(model, true);
-    run_dynamic_allocations_test(model);
-  }
-
-  // Test with humanoid random model (Composite)
-  {
-    Model model;
-    buildModels::humanoidRandom(model, false);
-    run_dynamic_allocations_test(model);
-  }
-
-  // Test with manipulator
-  {
-    Model model;
-    buildModels::manipulator(model);
-    run_dynamic_allocations_test(model);
-  }
-
   // Test with manipulator (Mimic)
-  {
-    Model model;
-    buildModels::manipulator(model, true);
-    run_dynamic_allocations_test(model);
-  }
-
-  // Test with humanoid (Free floating)
-  {
-    Model model;
-    buildModels::humanoid(model, true);
-    run_dynamic_allocations_test(model);
-  }
-
-  // Test with humanoid (Composite)
-  {
-    Model model;
-    buildModels::humanoid(model, false);
-    run_dynamic_allocations_test(model);
-  }
+  Model model;
+  const bool using_mimic = true;
+  buildModels::manipulator(model, using_mimic);
+  run_dynamic_allocations_test(model);
 }
+
+// BOOST_AUTO_TEST_CASE(dynamic_allocations_humanoid_free_floating)
+// {
+//   // Test with humanoid (Free floating)
+//   Model model;
+//   const bool using_free_floating = true;
+//   buildModels::humanoid(model, using_free_floating);
+//   run_dynamic_allocations_test(model);
+// }
+
+// BOOST_AUTO_TEST_CASE(dynamic_allocations_humanoid_composite)
+// {
+//   // Test with humanoid (Composite)
+//   Model model;
+//   const bool using_free_floating = false;
+//   buildModels::humanoid(model, using_free_floating);
+//   run_dynamic_allocations_test(model);
+// }

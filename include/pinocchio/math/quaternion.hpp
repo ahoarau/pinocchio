@@ -124,7 +124,7 @@ namespace pinocchio
       const Scalar mult1 = sqrt(Scalar(1) - u1);
       const Scalar mult2 = sqrt(u1);
 
-      static const Scalar PI_value = PI<Scalar>();
+      constexpr Scalar PI_value = PI<Scalar>();
       Scalar s2, c2;
       SINCOS(Scalar(2) * PI_value * u2, &s2, &c2);
       Scalar s3, c3;

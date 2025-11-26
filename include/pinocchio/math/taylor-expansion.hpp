@@ -30,14 +30,16 @@ namespace pinocchio
     template<int degree>
     static Scalar precision()
     {
-      static Scalar value =
-        math::pow(std::numeric_limits<Scalar>::epsilon(), Scalar(1) / Scalar(degree + 1));
-      return value;
+      constexpr Scalar a = std::numeric_limits<Scalar>::epsilon();
+      constexpr Scalar b = Scalar(1) / Scalar(degree + 1);
+      return math::pow(a, b);
     }
 
     static Scalar precision(const int degree)
     {
-      return math::pow(std::numeric_limits<Scalar>::epsilon(), Scalar(1) / Scalar(degree + 1));
+      constexpr Scalar a = std::numeric_limits<Scalar>::epsilon();
+      const Scalar b = Scalar(1) / Scalar(degree + 1);
+      return math::pow(a, b);
     }
   }; // struct TaylorSeriesExpansion
 

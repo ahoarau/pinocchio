@@ -24,7 +24,7 @@ namespace pinocchio
   /// \tparam Scalar The scalar type of the return pi value
   ///
   template<typename Scalar>
-  const Scalar PI()
+  inline constexpr Scalar PI()
   {
     return boost::math::constants::pi<Scalar>();
   }
