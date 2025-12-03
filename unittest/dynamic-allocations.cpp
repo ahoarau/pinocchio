@@ -35,9 +35,45 @@ using namespace pinocchio;
 
 #include <boost/test/unit_test.hpp>
 
+// Realtime Sanitizers (RTSan) Integration for checking *runtime* memory allocations.
+// We might have been temped to use the functions attributes [[clang::nonblocking]],
+// which enables compile-time checks AND runtime checks via the realtime sanitizer.
+// Unfortunately, we noticed that static variables, present in pinocchio and Eigen,
+// call for a __cxa_guard_acquire function, which seems to be implemented on aarch64
+// (Apple Silicon) with a pthread_mutex_lock call, causing RTSan to panic.
+// We might also have been temped to use [[clang::nonallocating]], but, as of 2025-06,
+// is only used for compile-time checks. It does NOT spawn RTSan for runtime checks.
+// This is a current limitation of RTSan, and might change in the near future.
+// Online demo: https://godbolt.org/z/3bWEeT46Y
+// The third option is to span a standalone RTSan as we do below.
+// This allows to check only runtime memory allocations.
+// In the the future, using [[clang::nonallocating]] will be the preferred options.
+
 #if !(defined(__has_feature) && __has_feature(realtime_sanitizer))
   #error "rtsan not enabled. Please enable rtsan with -fsanitize=realtime"
 #endif
+
+extern "C"
+{
+  void __rtsan_realtime_enter(void);
+  void __rtsan_realtime_exit(void);
+} // extern "C"
+
+namespace
+{
+  // RAII class to enter/exit RTSan realtime mode
+  struct ScopedSanitizeRealtime
+  {
+    ScopedSanitizeRealtime()
+    {
+      __rtsan_realtime_enter();
+    }
+    ~ScopedSanitizeRealtime()
+    {
+      __rtsan_realtime_exit();
+    }
+  };
+} // namespace
 
 BOOST_AUTO_TEST_SUITE(BOOST_TEST_MODULE)
 
