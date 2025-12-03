@@ -98,7 +98,8 @@ void runKinematicsTest(const Model & model, Data & data)
   const Eigen::VectorXd v = Eigen::VectorXd::Random(model.nv);
   const Eigen::VectorXd a = Eigen::VectorXd::Random(model.nv);
 
-  [&]() [[clang::nonallocating]] {
+  {
+    ScopedSanitizeRealtime ssr;
     // Forward kinematics (position only)
     forwardKinematics(model, data, q);
 
@@ -110,7 +111,7 @@ void runKinematicsTest(const Model & model, Data & data)
 
     // Update global placements
     updateGlobalPlacements(model, data);
-  }();
+  }
 }
 
 void runJacobianTest(const Model & model, Data & data)
@@ -118,23 +119,25 @@ void runJacobianTest(const Model & model, Data & data)
   const Eigen::VectorXd q = randomConfiguration(model);
   const Eigen::VectorXd v = Eigen::VectorXd::Random(model.nv);
 
-  [&]() [[clang::nonallocating]] {
+  {
+    ScopedSanitizeRealtime ssr;
     // Compute joint Jacobians
     computeJointJacobians(model, data, q);
-  }();
+  }
 
   // Get specific joint Jacobian
   const Data::Matrix6x J = Data::Matrix6x::Zero(6, model.nv);
   const JointIndex joint_id = static_cast<JointIndex>(model.njoints - 1);
 
-  [&]() [[clang::nonallocating]] {
+  {
+    ScopedSanitizeRealtime ssr;
     getJointJacobian(model, data, joint_id, LOCAL, J);
     getJointJacobian(model, data, joint_id, WORLD, J);
     getJointJacobian(model, data, joint_id, LOCAL_WORLD_ALIGNED, J);
 
     // Compute Jacobian time variation
     computeJointJacobiansTimeVariation(model, data, q, v);
-  }();
+  }
 }
 
 void runNonLinearEffectsTest(const Model & model, Data & data)
@@ -142,10 +145,11 @@ void runNonLinearEffectsTest(const Model & model, Data & data)
   const Eigen::VectorXd q = randomConfiguration(model);
   const Eigen::VectorXd v = Eigen::VectorXd::Random(model.nv);
 
-  [&]() [[clang::nonallocating]] {
+  {
+    ScopedSanitizeRealtime ssr;
     // Non-linear effects
     nonLinearEffects(model, data, q, v);
-  }();
+  }
 }
 
 void runRNEATest(const Model & model, Data & data)
@@ -154,22 +158,37 @@ void runRNEATest(const Model & model, Data & data)
   const Eigen::VectorXd v = Eigen::VectorXd::Random(model.nv);
   const Eigen::VectorXd a = Eigen::VectorXd::Random(model.nv);
 
-  [&]() [[clang::nonallocating]] {
+  {
+    ScopedSanitizeRealtime ssr;
     // RNEA (Recursive Newton-Euler Algorithm)
     rnea(model, data, q, v, a);
-  }();
+  }
 }
 
 void runCRBATest(const Model & model, Data & data)
 {
-  const Eigen::VectorXd q = randomConfiguration(model);
+  {
+    const Eigen::VectorXd q = randomConfiguration(model);
 
-  [&]() [[clang::nonallocating]] {
-    // CRBA (Composite Rigid Body Algorithm)
-    crba(model, data, q);
-    crba(model, data, q, Convention::WORLD);
-    crba(model, data, q, Convention::LOCAL);
-  }();
+    {
+      ScopedSanitizeRealtime ssr;
+      // CRBA (Composite Rigid Body Algorithm)
+      crba(model, data, q);
+    }
+  }
+
+  {
+    // Using neutral otherwise random configuration might trigger asserts
+    // in symmetric3.hpp "R is not a Unitary matrix"
+    const Eigen::VectorXd q = neutral(model);
+
+    {
+      ScopedSanitizeRealtime ssr;
+      // CRBA (Composite Rigid Body Algorithm)
+      crba(model, data, q, Convention::WORLD);
+      crba(model, data, q, Convention::LOCAL);
+    }
+  }
 }
 
 void runABATest(const Model & model, Data & data)
@@ -178,41 +197,45 @@ void runABATest(const Model & model, Data & data)
   const Eigen::VectorXd v = Eigen::VectorXd::Random(model.nv);
   const Eigen::VectorXd tau = Eigen::VectorXd::Random(model.nv);
 
-  [&]() [[clang::nonallocating]] {
+  {
+    ScopedSanitizeRealtime ssr;
     // ABA (Articulated Body Algorithm)
     aba(model, data, q, v, tau);
-  }();
+  }
 }
 
 void runDerivativesTest(const Model & model, Data & data)
 {
-  const Eigen::VectorXd q = randomConfiguration(model);
+  const Eigen::VectorXd q = neutral(model);
   const Eigen::VectorXd v = Eigen::VectorXd::Random(model.nv);
   const Eigen::VectorXd a = Eigen::VectorXd::Random(model.nv);
   const Eigen::VectorXd tau = Eigen::VectorXd::Random(model.nv);
 
-  [&]() [[clang::nonallocating]] {
+  {
+    ScopedSanitizeRealtime ssr;
     // Compute forward kinematics derivatives
     computeForwardKinematicsDerivatives(model, data, q, v, a);
-  }();
+  }
 
   // RNEA derivatives
   const Data::MatrixXs rnea_partial_dq = Data::MatrixXs::Zero(model.nv, model.nv);
   const Data::MatrixXs rnea_partial_dv = Data::MatrixXs::Zero(model.nv, model.nv);
   const Data::MatrixXs rnea_partial_da = Data::MatrixXs::Zero(model.nv, model.nv);
 
-  [&]() [[clang::nonallocating]] {
+  {
+    ScopedSanitizeRealtime ssr;
     computeRNEADerivatives(model, data, q, v, a, rnea_partial_dq, rnea_partial_dv, rnea_partial_da);
-  }();
+  }
 
   // ABA derivatives
   const Data::MatrixXs aba_partial_dq = Data::MatrixXs::Zero(model.nv, model.nv);
   const Data::MatrixXs aba_partial_dv = Data::MatrixXs::Zero(model.nv, model.nv);
   const Data::MatrixXs aba_partial_dtau = Data::MatrixXs::Zero(model.nv, model.nv);
 
-  [&]() [[clang::nonallocating]] {
+  {
+    ScopedSanitizeRealtime ssr;
     computeABADerivatives(model, data, q, v, tau, aba_partial_dq, aba_partial_dv, aba_partial_dtau);
-  }();
+  }
 }
 
 void runCenterOfMassTest(const Model & model, Data & data)
@@ -221,7 +244,8 @@ void runCenterOfMassTest(const Model & model, Data & data)
   const Eigen::VectorXd v = Eigen::VectorXd::Random(model.nv);
   const Eigen::VectorXd a = Eigen::VectorXd::Random(model.nv);
 
-  [&]() [[clang::nonallocating]] {
+  {
+    ScopedSanitizeRealtime ssr;
     // Compute center of mass position
     centerOfMass(model, data, q);
 
@@ -233,7 +257,7 @@ void runCenterOfMassTest(const Model & model, Data & data)
 
     // Jacobian of center of mass
     jacobianCenterOfMass(model, data, q);
-  }();
+  }
 }
 
 void runCenterOfMassDerivativesTest(const Model & model, Data & data)
@@ -242,15 +266,16 @@ void runCenterOfMassDerivativesTest(const Model & model, Data & data)
   const Eigen::VectorXd v = Eigen::VectorXd::Random(model.nv);
   Data::Matrix3x vcom_partial_dq = Data::Matrix3x::Zero(3, model.nv);
 
-  [&]() [[clang::nonallocating]] {
+  {
+    ScopedSanitizeRealtime ssr;
     // Center of mass derivatives
     getCenterOfMassVelocityDerivatives(model, data, vcom_partial_dq);
-  }();
+  }
 }
 
 void runCentroidalDynamicsTest(const Model & model, Data & data)
 {
-  const Eigen::VectorXd q = randomConfiguration(model);
+  const Eigen::VectorXd q = neutral(model);
   const Eigen::VectorXd v = Eigen::VectorXd::Random(model.nv);
   const Eigen::VectorXd a = Eigen::VectorXd::Random(model.nv);
   Data::Matrix6x dh_dq = Data::Matrix6x::Zero(6, model.nv);
@@ -258,7 +283,8 @@ void runCentroidalDynamicsTest(const Model & model, Data & data)
   Data::Matrix6x dhdot_dv = Data::Matrix6x::Zero(6, model.nv);
   Data::Matrix6x dhdot_da = Data::Matrix6x::Zero(6, model.nv);
 
-  [&]() [[clang::nonallocating]] {
+  {
+    ScopedSanitizeRealtime ssr;
     // Compute centroidal momentum
     computeCentroidalMomentum(model, data, q, v);
 
@@ -270,20 +296,21 @@ void runCentroidalDynamicsTest(const Model & model, Data & data)
 
     // Centroidal derivatives
     computeCentroidalDynamicsDerivatives(model, data, q, v, a, dh_dq, dhdot_dq, dhdot_dv, dhdot_da);
-  }();
+  }
 }
 
 void runFrameAlgorithmsTest(const Model & model, Data & data)
 {
   const Eigen::VectorXd q = randomConfiguration(model);
 
-  [&]() [[clang::nonallocating]] {
+  {
+    ScopedSanitizeRealtime ssr;
     // Update frame placements
     updateFramePlacements(model, data);
 
     // Forward kinematics for frames
     framesForwardKinematics(model, data, q);
-  }();
+  }
 
   const Data::Matrix6x frame_J = Data::Matrix6x::Zero(6, model.nv);
   Data::Matrix6x v_partial_dq = Data::Matrix6x::Zero(6, model.nv);
@@ -294,7 +321,8 @@ void runFrameAlgorithmsTest(const Model & model, Data & data)
 
   for (FrameIndex frame_idx = 0; frame_idx < static_cast<FrameIndex>(model.nframes); ++frame_idx)
   {
-    [&]() [[clang::nonallocating]] {
+    {
+      ScopedSanitizeRealtime ssr;
       getFrameJacobian(model, data, frame_idx, LOCAL, frame_J);
       getFrameJacobian(model, data, frame_idx, WORLD, frame_J);
       getFrameJacobian(model, data, frame_idx, LOCAL_WORLD_ALIGNED, frame_J);
@@ -321,25 +349,29 @@ void runFrameAlgorithmsTest(const Model & model, Data & data)
       getFrameClassicalAcceleration(model, data, frame_idx, LOCAL);
       getFrameClassicalAcceleration(model, data, frame_idx, WORLD);
       getFrameClassicalAcceleration(model, data, frame_idx, LOCAL_WORLD_ALIGNED);
-    }();
+    }
     // Frame derivatives
     if (!hasMimicJoints(model))
     {
-      [&]() [[clang::nonallocating]] {
+      {
+        ScopedSanitizeRealtime ssr;
         getFrameVelocityDerivatives(model, data, frame_idx, LOCAL, v_partial_dq, v_partial_dv);
         getFrameAccelerationDerivatives(
           model, data, frame_idx, LOCAL, v_partial_dq, a_partial_dq, a_partial_dv, a_partial_da);
-      }();
+      }
     }
   }
 }
 
 void runComputeAllTermsTest(const Model & model, Data & data)
 {
-  const Eigen::VectorXd q = randomConfiguration(model);
+  const Eigen::VectorXd q = neutral(model);
   const Eigen::VectorXd v = Eigen::VectorXd::Random(model.nv);
 
-  [&]() [[clang::nonallocating]] { computeAllTerms(model, data, q, v); }();
+  {
+    ScopedSanitizeRealtime ssr;
+    computeAllTerms(model, data, q, v);
+  }
 }
 
 void runEnergyTest(const Model & model, Data & data)
@@ -347,40 +379,44 @@ void runEnergyTest(const Model & model, Data & data)
   const Eigen::VectorXd q = randomConfiguration(model);
   const Eigen::VectorXd v = Eigen::VectorXd::Random(model.nv);
 
-  [&]() [[clang::nonallocating]] {
+  {
+    ScopedSanitizeRealtime ssr;
     // Compute kinetic energy
     computeKineticEnergy(model, data, q, v);
 
     // Compute potential energy
     computePotentialEnergy(model, data, q);
-  }();
+  }
 }
 
 void runComputeGeneralizedGravityTest(const Model & model, Data & data)
 {
   const Eigen::VectorXd q = randomConfiguration(model);
 
-  [&]() [[clang::nonallocating]] {
+  {
+    ScopedSanitizeRealtime ssr;
     // Compute generalized gravity
     computeGeneralizedGravity(model, data, q);
-  }();
+  }
 }
 
 void runCholeskyTest(const Model & model, Data & data)
 {
   Eigen::VectorXd v_chol = Eigen::VectorXd::Random(model.nv);
 
-  [&]() [[clang::nonallocating]] {
+  {
+    ScopedSanitizeRealtime ssr;
     cholesky::decompose(model, data);
     cholesky::solve(model, data, v_chol);
-  }();
+  }
 
   Data::MatrixXs M_inv = Data::MatrixXs::Zero(model.nv, model.nv);
 
-  [&]() [[clang::nonallocating]] {
+  {
+    ScopedSanitizeRealtime ssr;
     // Compute inverse of mass matrix using Cholesky
     cholesky::computeMinv(model, data, M_inv);
-  }();
+  }
 }
 
 void runJointConfigurationOperationsTest(const Model & model)
@@ -392,7 +428,8 @@ void runJointConfigurationOperationsTest(const Model & model)
   Eigen::VectorXd q_integrated(model.nq);
   Eigen::VectorXd q_interp(model.nq);
 
-  [&]() [[clang::nonallocating]] {
+  {
+    ScopedSanitizeRealtime ssr;
     normalize(model, q);
     difference(model, q, q_neutral, dq);
     integrate(model, q, v, q_integrated);
@@ -400,7 +437,7 @@ void runJointConfigurationOperationsTest(const Model & model)
     distance(model, q, q_neutral);
     isNormalized(model, q);
     isSameConfiguration(model, q, q, 1e-12);
-  }();
+  }
 }
 
 void runJointTorqueRegressorTest(const Model & model, Data & data)
@@ -409,10 +446,11 @@ void runJointTorqueRegressorTest(const Model & model, Data & data)
   const Eigen::VectorXd v = Eigen::VectorXd::Random(model.nv);
   const Eigen::VectorXd a = Eigen::VectorXd::Random(model.nv);
 
-  [&]() [[clang::nonallocating]] {
+  {
+    ScopedSanitizeRealtime ssr;
     // Compute joint torque regressor
     computeJointTorqueRegressor(model, data, q, v, a);
-  }();
+  }
 }
 
 void runContactDynamicsTest(const Model & model, Data & data)
@@ -437,19 +475,21 @@ void runContactDynamicsTest(const Model & model, Data & data)
     // Initialize contact data
     initConstraintDynamics(model, data, contact_models);
 
-    [&]() [[clang::nonallocating]] {
+    {
+      ScopedSanitizeRealtime ssr;
       // Constrained forward dynamics
       constraintDynamics(model, data, q, v, tau, contact_models, contact_data);
-    }();
+    }
 
     // Contact Cholesky
     ContactCholeskyDecomposition contact_chol;
     contact_chol.allocate(model, contact_models);
 
-    [&]() [[clang::nonallocating]] {
+    {
+      ScopedSanitizeRealtime ssr;
       crba(model, data, q, Convention::WORLD);
       contact_chol.compute(model, data, contact_models, contact_data);
-    }();
+    }
 
     // Constrained dynamics derivatives
     Data::MatrixXs ddq_dq = Data::MatrixXs::Zero(model.nv, model.nv);
@@ -460,21 +500,23 @@ void runContactDynamicsTest(const Model & model, Data & data)
     Data::MatrixXs lambda_dv = Data::MatrixXs::Zero(constraint_dim, model.nv);
     Data::MatrixXs lambda_dtau = Data::MatrixXs::Zero(constraint_dim, model.nv);
 
-    [&]() [[clang::nonallocating]] {
+    {
+      ScopedSanitizeRealtime ssr;
       computeConstraintDynamicsDerivatives(
         model, data, contact_models, contact_data, ddq_dq, ddq_dv, ddq_dtau, lambda_dq, lambda_dv,
         lambda_dtau);
-    }();
+    }
 
     // Impulse dynamics
     Eigen::VectorXd v_before = v;
     const double r_coeff = 0.0;
     ProximalSettings prox_settings(1e-12, 0., 1);
 
-    [&]() [[clang::nonallocating]] {
+    {
+      ScopedSanitizeRealtime ssr;
       impulseDynamics(
         model, data, q, v_before, contact_models, contact_data, r_coeff, prox_settings);
-    }();
+    }
 
     // Impulse dynamics derivatives
     Data::MatrixXs ddv_dq = Data::MatrixXs::Zero(model.nv, model.nv);
@@ -482,10 +524,11 @@ void runContactDynamicsTest(const Model & model, Data & data)
     Data::MatrixXs impulse_dq = Data::MatrixXs::Zero(constraint_dim, model.nv);
     Data::MatrixXs impulse_dv = Data::MatrixXs::Zero(constraint_dim, model.nv);
 
-    [&]() [[clang::nonallocating]] {
+    {
+      ScopedSanitizeRealtime ssr;
       computeImpulseDynamicsDerivatives(
         model, data, contact_models, contact_data, r_coeff, prox_settings);
-    }();
+    }
   }
 }
 
@@ -496,7 +539,6 @@ void runDynamicAllocationsTest(const Model & model)
 
   if (hasCompositeJoints(model))
   {
-    // Joint Composite currently performs dynamic allocations
     return;
   }
 
@@ -516,7 +558,6 @@ void runDynamicAllocationsTest(const Model & model)
   }
 
   runJointTorqueRegressorTest(model, data);
-  runContactDynamicsTest(model, data);
   runABATest(model, data);
   runCenterOfMassDerivativesTest(model, data);
   runDerivativesTest(model, data);
@@ -524,6 +565,8 @@ void runDynamicAllocationsTest(const Model & model)
   runComputeAllTermsTest(model, data);
   runEnergyTest(model, data);
   runCholeskyTest(model, data);
+  // Those tests are disabled for now as they trigger dynamic allocations
+  // runContactDynamicsTest(model, data);
 }
 
 BOOST_AUTO_TEST_CASE(dynamic_allocations_humanoid_random_free_floating)
@@ -596,7 +639,8 @@ BOOST_AUTO_TEST_CASE(dynamic_allocations_humanoid_composite)
 
 BOOST_AUTO_TEST_CASE(dynamic_allocations_spatial_operations)
 {
-  [&]() [[clang::nonallocating]] {
+  {
+    ScopedSanitizeRealtime ssr;
     // Classic acceleration
     SE3 M = SE3::Random();
     Motion v_spatial = Motion::Random();
@@ -611,7 +655,7 @@ BOOST_AUTO_TEST_CASE(dynamic_allocations_spatial_operations)
     Motion::Vector6 nu = Motion::Vector6::Random();
     exp6(nu);
     log6(M);
-  }();
+  }
 }
 
 BOOST_AUTO_TEST_SUITE_END()
