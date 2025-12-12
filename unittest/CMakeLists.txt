@@ -355,6 +355,9 @@ endif()
 if(BUILD_WITH_RTSAN)
   add_pinocchio_unit_test(dynamic-allocations)
   get_cpp_test_name(dynamic-allocations ${CMAKE_CURRENT_SOURCE_DIR} test_name)
+  # Prevent static local variables to use pthread_lock() on initialization. You can find static
+  # local variables in Pinocchio, but also Eigen.
+  target_compile_options(${test_name} PRIVATE $<$<PLATFORM_ID:Darwin>:-fno-threadsafe-statics>)
   target_compile_options(${test_name} PRIVATE -fsanitize=realtime)
   target_link_options(${test_name} PRIVATE -fsanitize=realtime)
 endif()
