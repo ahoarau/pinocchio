@@ -154,6 +154,11 @@ namespace pinocchio
   , d2tau_dqdv(model.nv, model.nv, model.nv)
   , d2tau_dadq(model.nv, model.nv, model.nv)
 #endif
+  , J_cont_inv_dyn()
+  , c_ref_cor_cont_inv_dyn()
+  , R_prox_cont_inv_dyn()
+  , impulse_c_prev_cont_inv_dyn()
+  , dimpulse_c_cont_inv_dyn()
   , extended_motion_propagator((std::size_t)model.njoints, Matrix6::Zero())
   , extended_motion_propagator2((std::size_t)model.njoints, Matrix6::Zero())
   , spatial_inv_inertia((std::size_t)model.njoints, Matrix6::Zero())

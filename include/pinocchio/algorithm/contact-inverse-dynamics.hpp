@@ -67,22 +67,22 @@ namespace pinocchio
       const boost::optional<VectorLikeImp> & impulse_guess = boost::none)
   {
 
-    typedef Eigen::Matrix<Scalar, Eigen::Dynamic, Eigen::Dynamic, Options> MatrixXs;
     typedef Eigen::Matrix<Scalar, Eigen::Dynamic, 1, Options> VectorXs;
     typedef Eigen::Matrix<Scalar, 3, 1, Options> Vector3;
 
-    int problem_size = R.size();
-    int n_contacts = (int)problem_size / 3;
+    const int problem_size = (int)R.size();
+    const int n_contacts = problem_size / 3;
     PINOCCHIO_CHECK_ARGUMENT_SIZE(constraint_correction.size(), problem_size);
-    PINOCCHIO_CHECK_ARGUMENT_SIZE(contact_models.size(), n_contacts);
-    PINOCCHIO_CHECK_ARGUMENT_SIZE(contact_datas.size(), n_contacts);
+    PINOCCHIO_CHECK_ARGUMENT_SIZE(contact_models.size(), (size_t)n_contacts);
+    PINOCCHIO_CHECK_ARGUMENT_SIZE(contact_datas.size(), (size_t)n_contacts);
     PINOCCHIO_CHECK_INPUT_ARGUMENT(
       check_expression_if_real<Scalar>(settings.mu > Scalar(0)), "mu has to be strictly positive");
-    MatrixXs J = MatrixXs::Zero(problem_size, model.nv); // TODO: malloc
-    getConstraintsJacobian(model, data, contact_models, contact_datas, J);
-    VectorXs c_ref_cor, desaxce_correction, R_prox, impulse_c_prev, dimpulse_c; // TODO: malloc
-    R_prox = R + VectorXs::Constant(problem_size, settings.mu);
-    c_ref_cor = c_ref + constraint_correction;
+
+    data.J_cont_inv_dyn.resize(problem_size, model.nv);
+    data.J_cont_inv_dyn.setZero();
+    getConstraintsJacobian(model, data, contact_models, contact_datas, data.J_cont_inv_dyn);
+    data.R_prox_cont_inv_dyn.noalias() = R.derived() + VectorXs::Constant(problem_size, settings.mu);
+    data.c_ref_cor_cont_inv_dyn.noalias() = c_ref.derived() + constraint_correction.derived();
     if (impulse_guess)
     {
       data.impulse_c = impulse_guess.get();
@@ -90,26 +90,27 @@ namespace pinocchio
     }
     else
     {
+      data.impulse_c.resize(problem_size);
       data.impulse_c.setZero();
     }
     Scalar impulse_c_prev_norm_inf = data.impulse_c.template lpNorm<Eigen::Infinity>();
-    Scalar complementarity, dual_feasibility;
     bool abs_prec_reached = false, rel_prec_reached = false;
     const size_t nc = cones.size(); // num constraints
     settings.iter = 1;
     for (; settings.iter <= settings.max_iter; ++settings.iter)
     {
-      impulse_c_prev = data.impulse_c;
+      data.impulse_c_prev_cont_inv_dyn = data.impulse_c;
       for (size_t cone_id = 0; cone_id < nc; ++cone_id)
       {
-        const Eigen::DenseIndex row_id = 3 * cone_id;
+        const Eigen::DenseIndex row_id = 3 * (Eigen::DenseIndex)cone_id;
         const auto & cone = cones[cone_id];
         auto impulse_segment = data.impulse_c.template segment<3>(row_id);
-        auto impulse_prev_segment = impulse_c_prev.template segment<3>(row_id);
-        auto R_prox_segment = R_prox.template segment<3>(row_id);
+        const auto impulse_prev_segment =
+          data.impulse_c_prev_cont_inv_dyn.template segment<3>(row_id);
+        const auto R_prox_segment = data.R_prox_cont_inv_dyn.template segment<3>(row_id);
         // Vector3 desaxce_segment;
         // auto desaxce_segment = desaxce_correction.template segment<3>(row_id);
-        auto c_ref_segment = c_ref.template segment<3>(row_id);
+        const auto c_ref_segment = data.c_ref_cor_cont_inv_dyn.template segment<3>(row_id);
         Vector3 desaxce_segment = cone.computeNormalCorrection(
           c_ref_segment
           + (R.template segment<3>(row_id).array() * impulse_segment.array()).matrix());
@@ -119,8 +120,9 @@ namespace pinocchio
              .matrix();
         impulse_segment = cone.weightedProject(impulse_segment, R_prox_segment);
       }
-      dimpulse_c = data.impulse_c - impulse_c_prev;
-      settings.relative_residual = dimpulse_c.template lpNorm<Eigen::Infinity>();
+      data.dimpulse_c_cont_inv_dyn.noalias() = data.impulse_c - data.impulse_c_prev_cont_inv_dyn;
+      settings.relative_residual =
+        data.dimpulse_c_cont_inv_dyn.template lpNorm<Eigen::Infinity>();
 
       // if(   check_expression_if_real<Scalar,false>(complementarity <= this->absolute_precision)
       //    && check_expression_if_real<Scalar,false>(dual_feasibility <= this->absolute_precision)

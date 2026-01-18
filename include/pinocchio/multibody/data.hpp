@@ -551,6 +551,18 @@ namespace pinocchio
     /// \brief Primal RHS in contact dynamic equations
     VectorXs primal_rhs_contact;
 
+    /// \brief Contact Jacobian used in contact inverse dynamics
+    MatrixXs J_cont_inv_dyn;
+    /// \brief Corrected velocity reference used in contact inverse dynamics
+    VectorXs c_ref_cor_cont_inv_dyn;
+    /// \brief Proximal compliance used in contact inverse dynamics
+    VectorXs R_prox_cont_inv_dyn;
+    /// \brief Contact impulse at the previous iteration of the contact inverse dynamics algorithm
+    VectorXs impulse_c_prev_cont_inv_dyn;
+    /// \brief Variation of the contact impulse between two iterations of the contact inverse
+    /// dynamics algorithm
+    VectorXs dimpulse_c_cont_inv_dyn;
+
 #if defined(_MSC_VER)
       // Eigen tensor warning: Eigen\CXX11\src/Tensor/Tensor.h(76,1): warning C4554: '&': check
       // operator precedence for possible error
